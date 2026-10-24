@@ -5,7 +5,6 @@ import {
   Users,
   Receipt,
   PiggyBank,
-  Building,
   LogOut,
   X,
   Server,

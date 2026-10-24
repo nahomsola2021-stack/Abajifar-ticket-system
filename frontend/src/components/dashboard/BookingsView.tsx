@@ -66,15 +66,6 @@ const STATUS_STYLES: Record<string, string> = {
   closed: 'bg-slate-100 text-slate-500 border-slate-200',
 };
 
-const WORKFLOW_STEPS: string[] = [
-  'draft',
-  'requested',
-  'quoted',
-  'confirmed',
-  'ticketing_pending',
-  'ticketed',
-];
-
 const QUICK_FILTER_TABS: Array<{ value: BookingStatus | ''; label: string }> = [
   { value: '', label: 'All' },
   { value: 'requested', label: 'Requested' },
