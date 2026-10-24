@@ -1,0 +1,12 @@
+# Private attachment storage. Files are only served through the authenticated
+# download endpoint, never from a public static directory.
+storage/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Local environment
+.env
+.env.local

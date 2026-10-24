@@ -1,0 +1,52 @@
+# Render blueprint for the ticket office system.
+#
+# The API runs on Render and the frontend runs as a static site on the same
+# blueprint, so a single repository can be deployed from one place. The
+# frontend can equally be deployed to Vercel with vercel.json.
+#
+# Set the `sync: false` variables in the Render dashboard before the first
+# deploy. The API reads CORS_ORIGINS as a comma-separated list of the exact
+# browser origins allowed to call it, for example:
+#   https://ticket-office-frontend.vercel.app,https://office.example.com
+
+services:
+  - type: web
+    name: ticket-office-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    # Apply any outstanding migrations before the service takes traffic.
+    releaseCommand: python scripts/apply_migrations.py
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.8"
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: DOCUMENT_STORAGE_DIR
+        value: /var/data/documents
+    disk:
+      name: ticket-office-documents
+      mountPath: /var/data
+      sizeGB: 1
+
+  - type: web
+    name: ticket-office-web
+    runtime: static
+    buildCommand: npm ci --prefix frontend && npm run build --prefix frontend
+    staticPublishPath: ./frontend/dist
+    envVars:
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
+      - key: VITE_API_URL
+        sync: false
