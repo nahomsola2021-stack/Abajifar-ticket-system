@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { getSupabaseClient, resetSupabaseClient, getAuthStore } from '../lib/supabaseClient';
+import { getSupabaseClient, resetSupabaseClient, hybridStorage } from '../lib/supabaseClient';
 import { getAppConfig } from '../lib/config';
 import type { AppConfig } from '../lib/config';
 import { fetchStaffIdentity, fetchDashboardOverview, formatAuthError } from '../lib/api';
@@ -29,13 +29,12 @@ const BACKUP_KEY = 'sb-abajifar-auth-backup';
 
 const extractLocalSession = async (): Promise<Session | null> => {
   try {
-    const store = await getAuthStore();
-    const backupString = await store.get<string>(BACKUP_KEY);
+    const backupString = await hybridStorage.get(BACKUP_KEY);
     if (backupString) {
       return JSON.parse(backupString) as Session;
     }
   } catch (e) {
-    console.warn('Failed to extract local session from native store:', e);
+    console.warn('Failed to extract backup session:', e);
   }
   return null;
 };
@@ -54,15 +53,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const reloadConfig = useCallback(() => {
     resetSupabaseClient();
-    const newConfig = getAppConfig();
-    setConfig(newConfig);
+    setConfig(getAppConfig());
     setAuthError(null);
     setOverviewError(null);
   }, []);
 
-  const clearAuthError = useCallback(() => {
-    setAuthError(null);
-  }, []);
+  const clearAuthError = useCallback(() => setAuthError(null), []);
 
   const loadStaffAndOverview = useCallback(async (token: string) => {
     setIsLoading(true);
@@ -88,9 +84,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (status === 401 || status === 403) {
         const supabase = getSupabaseClient();
         await supabase?.auth.signOut();
-        const store = await getAuthStore();
-        await store.delete(BACKUP_KEY);
-        await store.save();
+        await hybridStorage.remove(BACKUP_KEY);
         setSession(null);
         setStaff(null);
         setOverview(null);
@@ -99,7 +93,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setOverviewError(formatted);
         setAuthError({
           code: 'BACKEND_CONNECTION_ERROR',
-          message: 'The server is unreachable or waking up. Please wait a moment and click Retry Verification.',
+          message: 'The server is unreachable or waking up.',
           details: err instanceof Error ? err.message : String(err)
         });
       }
@@ -113,8 +107,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsOverviewLoading(true);
     setOverviewError(null);
     try {
-      const data = await fetchDashboardOverview(accessToken);
-      setOverview(data);
+      setOverview(await fetchDashboardOverview(accessToken));
     } catch (err) {
       setOverviewError(formatAuthError(err));
     } finally {
@@ -126,16 +119,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!accessToken) return;
     try {
       setAuthError(null);
-      const identity = await fetchStaffIdentity(accessToken);
-      setStaff(identity);
+      setStaff(await fetchStaffIdentity(accessToken));
     } catch (err) {
       const status = (err as { status?: number })?.status;
       if (status === 401 || status === 403) {
         const supabase = getSupabaseClient();
         await supabase?.auth.signOut();
-        const store = await getAuthStore();
-        await store.delete(BACKUP_KEY);
-        await store.save();
+        await hybridStorage.remove(BACKUP_KEY);
         setSession(null);
         setStaff(null);
         setOverview(null);
@@ -152,7 +142,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     let isMounted = true;
-
     const initializeAuth = async () => {
       if (!isMounted) return;
       setIsLoading(true);
@@ -165,11 +154,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             access_token: localSession.access_token,
             refresh_token: localSession.refresh_token,
           });
-
           if (!error && data.session) {
-            const store = await getAuthStore();
-            await store.set(BACKUP_KEY, JSON.stringify(data.session));
-            await store.save();
+            await hybridStorage.set(BACKUP_KEY, JSON.stringify(data.session));
             setSession(data.session);
             await loadStaffAndOverview(data.session.access_token);
             return;
@@ -180,9 +166,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (error) throw error;
         
         if (session) {
-          const store = await getAuthStore();
-          await store.set(BACKUP_KEY, JSON.stringify(session));
-          await store.save();
+          await hybridStorage.set(BACKUP_KEY, JSON.stringify(session));
           setSession(session);
           await loadStaffAndOverview(session.access_token);
         } else {
@@ -196,18 +180,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     
     initializeAuth();
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
       if (!isMounted) return;
-
       if (event === 'SIGNED_OUT') {
         const localToken = await extractLocalSession();
         if (localToken) return;
         
-        const store = await getAuthStore();
-        await store.delete(BACKUP_KEY);
-        await store.save();
+        await hybridStorage.remove(BACKUP_KEY);
         setSession(null);
         setStaff(null);
         setOverview(null);
@@ -215,19 +194,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setOverviewError(null);
         return;
       }
-
       if (event === 'TOKEN_REFRESHED' && newSession) {
-        const store = await getAuthStore();
-        await store.set(BACKUP_KEY, JSON.stringify(newSession));
-        await store.save();
+        await hybridStorage.set(BACKUP_KEY, JSON.stringify(newSession));
         setSession(newSession);
         return;
       }
-
       if (event === 'SIGNED_IN' && newSession) {
-        const store = await getAuthStore();
-        await store.set(BACKUP_KEY, JSON.stringify(newSession));
-        await store.save();
+        await hybridStorage.set(BACKUP_KEY, JSON.stringify(newSession));
         setSession(newSession);
         loadStaffAndOverview(newSession.access_token);
       }
@@ -247,21 +220,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      });
-
+      const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
       if (error) {
         setAuthError(formatAuthError(error));
         setIsLoading(false);
         throw error;
       }
-
       if (data.session) {
-        const store = await getAuthStore();
-        await store.set(BACKUP_KEY, JSON.stringify(data.session));
-        await store.save();
+        await hybridStorage.set(BACKUP_KEY, JSON.stringify(data.session));
         setSession(data.session);
         await loadStaffAndOverview(data.session.access_token);
       }
@@ -274,9 +240,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signOut = async () => {
     setIsLoading(true);
     try {
-      const store = await getAuthStore();
-      await store.delete(BACKUP_KEY);
-      await store.save();
+      await hybridStorage.remove(BACKUP_KEY);
       const supabase = getSupabaseClient();
       if (supabase) await supabase.auth.signOut();
     } catch (err) {
@@ -292,13 +256,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider
-      value={{
-        session, accessToken, staff, overview, isLoading, isOverviewLoading,
-        authError, overviewError, config, signIn, signOut, refreshOverview,
-        refreshIdentity, reloadConfig, clearAuthError,
-      }}
-    >
+    <AuthContext.Provider value={{ session, accessToken, staff, overview, isLoading, isOverviewLoading, authError, overviewError, config, signIn, signOut, refreshOverview, refreshIdentity, reloadConfig, clearAuthError }}>
       {children}
     </AuthContext.Provider>
   );

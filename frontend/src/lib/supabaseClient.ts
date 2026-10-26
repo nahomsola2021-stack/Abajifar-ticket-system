@@ -2,22 +2,66 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { load, Store } from '@tauri-apps/plugin-store';
 import { getAppConfig } from './config';
 
+// Safely detect if the app is running inside the Tauri Desktop wrapper
+const isDesktop = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
 let cachedClient: SupabaseClient | null = null;
 let lastUsedConfig: { url: string; key: string } | null = null;
 
-// Tauri v2 requires using the async `load` function instead of `new Store()`
 let authStorePromise: Promise<Store> | null = null;
-export const getAuthStore = (): Promise<Store> => {
+const getAuthStore = (): Promise<Store | null> => {
+  if (!isDesktop()) return Promise.resolve(null);
   if (!authStorePromise) {
     authStorePromise = load('abajifar_auth.json', { autoSave: false });
   }
   return authStorePromise;
 };
 
-const renderAwareFetch = async (
-  url: RequestInfo | URL,
-  options?: RequestInit
-): Promise<Response> => {
+// Hybrid Storage Adapter: Uses Native Rust on PC, and LocalStorage on Vercel Web
+export const hybridStorage = {
+  get: async (key: string): Promise<string | null> => {
+    if (!isDesktop()) return localStorage.getItem(key);
+    try {
+      const store = await getAuthStore();
+      return store ? (await store.get<string>(key)) || null : localStorage.getItem(key);
+    } catch (err) {
+      console.error('Storage get error:', err);
+      return null;
+    }
+  },
+  set: async (key: string, value: string): Promise<void> => {
+    if (!isDesktop()) {
+      localStorage.setItem(key, value);
+      return;
+    }
+    try {
+      const store = await getAuthStore();
+      if (store) {
+        await store.set(key, value);
+        await store.save(); // Physically writes to C: drive
+      }
+    } catch (err) {
+      console.error('Storage set error:', err);
+    }
+  },
+  remove: async (key: string): Promise<void> => {
+    if (!isDesktop()) {
+      localStorage.removeItem(key);
+      return;
+    }
+    try {
+      const store = await getAuthStore();
+      if (store) {
+        await store.delete(key);
+        await store.save();
+      }
+    } catch (err) {
+      console.error('Storage remove error:', err);
+    }
+  },
+};
+
+const renderAwareFetch = async (url: RequestInfo | URL, options?: RequestInit): Promise<Response> => {
   const maxRetries = 3;
   const delayMs = 15000; 
 
@@ -26,63 +70,31 @@ const renderAwareFetch = async (
       const response = await fetch(url, options);
       if (response.status === 502 || response.status === 503 || response.status === 504) {
         if (i === maxRetries - 1) return response;
-        console.warn(`[Supabase Fetch] Backend waking up (Status: ${response.status}). Retrying in ${delayMs / 1000}s...`);
+        console.warn(`[Supabase Fetch] Backend waking up... Retrying in ${delayMs / 1000}s`);
         await new Promise(res => setTimeout(res, delayMs));
         continue;
       }
       return response;
     } catch (error) {
       if (i === maxRetries - 1) throw error;
-      console.warn(`[Supabase Fetch] Network error, backend likely asleep. Retrying in ${delayMs / 1000}s...`);
       await new Promise(res => setTimeout(res, delayMs));
     }
   }
-  throw new Error("Backend failed to wake up after multiple attempts.");
+  throw new Error("Backend failed to wake up.");
 };
 
+// Supabase Auth Adapter maps to our hybrid functions
 const tauriStoreAdapter = {
-  getItem: async (key: string): Promise<string | null> => {
-    try {
-      const store = await getAuthStore();
-      return (await store.get<string>(key)) || null;
-    } catch (err) {
-      console.error('Tauri Store getItem error:', err);
-      return null;
-    }
-  },
-  setItem: async (key: string, value: string): Promise<void> => {
-    try {
-      const store = await getAuthStore();
-      await store.set(key, value);
-      await store.save(); // Physically writes to the C: drive instantly
-    } catch (err) {
-      console.error('Tauri Store setItem error:', err);
-    }
-  },
-  removeItem: async (key: string): Promise<void> => {
-    try {
-      const store = await getAuthStore();
-      await store.delete(key);
-      await store.save();
-    } catch (err) {
-      console.error('Tauri Store removeItem error:', err);
-    }
-  },
+  getItem: hybridStorage.get,
+  setItem: hybridStorage.set,
+  removeItem: hybridStorage.remove,
 };
 
 export function getSupabaseClient(): SupabaseClient | null {
   const { supabaseUrl, supabaseAnonKey } = getAppConfig();
+  if (!supabaseUrl || !supabaseAnonKey) return null;
 
-  if (!supabaseUrl || !supabaseAnonKey) {
-    return null;
-  }
-
-  if (
-    cachedClient &&
-    lastUsedConfig &&
-    lastUsedConfig.url === supabaseUrl &&
-    lastUsedConfig.key === supabaseAnonKey
-  ) {
+  if (cachedClient && lastUsedConfig && lastUsedConfig.url === supabaseUrl && lastUsedConfig.key === supabaseAnonKey) {
     return cachedClient;
   }
 
@@ -94,14 +106,11 @@ export function getSupabaseClient(): SupabaseClient | null {
         persistSession: true,
         detectSessionInUrl: false,
       },
-      global: {
-        fetch: renderAwareFetch,
-      }
+      global: { fetch: renderAwareFetch }
     });
     lastUsedConfig = { url: supabaseUrl, key: supabaseAnonKey };
     return cachedClient;
   } catch (err) {
-    console.error('Failed to initialize Supabase client:', err);
     return null;
   }
 }
