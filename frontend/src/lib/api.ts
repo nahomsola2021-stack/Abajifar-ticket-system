@@ -117,6 +117,38 @@ function addDateFilters(params: URLSearchParams, options: ListQueryOptions): voi
 }
 
 /**
+ * A robust fetch wrapper that intercepts Render's sleep phase.
+ * It absorbs CORS errors ("Failed to fetch") and 502 Bad Gateway responses,
+ * retrying automatically until the Render instance is fully awake.
+ */
+async function renderAwareFetch(url: RequestInfo | URL, options?: RequestInit): Promise<Response> {
+  const maxRetries = 4;
+  const delayMs = 15000; // Allow up to 60 seconds total for Render to wake up
+
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const response = await fetch(url, options);
+      
+      // Handle Render HTML error pages returned while the container is booting
+      if (response.status === 502 || response.status === 503 || response.status === 504) {
+        if (i === maxRetries - 1) return response;
+        console.warn(`[API] Backend waking up (Status: ${response.status}). Retrying in ${delayMs / 1000}s...`);
+        await new Promise(res => setTimeout(res, delayMs));
+        continue;
+      }
+      
+      return response;
+    } catch (error) {
+      // Handle missing CORS headers or strict timeouts caused by the asleep container
+      if (i === maxRetries - 1) throw error;
+      console.warn(`[API] Network error (CORS/Offline). Backend likely asleep. Retrying in ${delayMs / 1000}s...`);
+      await new Promise(res => setTimeout(res, delayMs));
+    }
+  }
+  throw new Error("Backend failed to wake up after multiple attempts.");
+}
+
+/**
  * Validates and normalizes StaffIdentity response from GET /api/auth/me
  */
 function validateStaffIdentity(data: unknown): StaffIdentity {
@@ -305,7 +337,7 @@ export async function fetchStaffIdentity(accessToken: string): Promise<StaffIden
 
   let response: Response;
   try {
-    response = await fetch(endpoint, {
+    response = await renderAwareFetch(endpoint, {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -377,7 +409,7 @@ export async function fetchDashboardOverview(accessToken: string): Promise<Dashb
 
   let response: Response;
   try {
-    response = await fetch(endpoint, {
+    response = await renderAwareFetch(endpoint, {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -435,7 +467,7 @@ async function customerRequest<T>(accessToken: string, path: string, init?: Requ
 
   let response: Response;
   try {
-    response = await fetch(`${apiUrl}${path}`, {
+    response = await renderAwareFetch(`${apiUrl}${path}`, {
       ...init,
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -580,7 +612,7 @@ export async function downloadCustomerBalancesCsv(accessToken: string): Promise<
     throw new ApiError('Backend API URL (VITE_API_URL) is not configured.', 0, 'ENV_CONFIG_MISSING');
   }
 
-  const response = await fetch(`${apiUrl}/api/financial-reports/customer-balances.csv`, {
+  const response = await renderAwareFetch(`${apiUrl}/api/financial-reports/customer-balances.csv`, {
     headers: { Authorization: `Bearer ${accessToken}`, Accept: 'text/csv' },
   });
   if (!response.ok) {
@@ -607,7 +639,7 @@ export async function downloadInvoicePdf(accessToken: string, invoiceId: number)
 
   let response: Response;
   try {
-    response = await fetch(`${apiUrl}/api/invoices/${invoiceId}/pdf`, {
+    response = await renderAwareFetch(`${apiUrl}/api/invoices/${invoiceId}/pdf`, {
       headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/pdf' },
     });
   } catch (error) {
@@ -711,26 +743,14 @@ export function addFlightSegment(
   });
 }
 
-/**
- * Fetch ticket sales.
- *
- * Supports both existing page calls:
- *   fetchTicketSales(token, query, status, limit, offset)
- * and report-style calls:
- *   fetchTicketSales(token, { start_date, end_date, limit })
- *   fetchTicketSales(token, '')
- *
- * Defaults prevent limit=undefined/offset=undefined from being sent when
- * a reporting component only supplies the access token and an empty query.
- */
 export async function fetchTicketSales(token: string, search: string = '', startDate?: string, endDate?: string) {
-  const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
+  const API_URL = 'https://abajifar-ticket-system.onrender.com';
   let url = `${API_URL}/api/ticket-sales?limit=1000&offset=0`;
   if (search) url += `&search=${encodeURIComponent(search)}`;
   if (startDate) url += `&start_date=${startDate}`;
   if (endDate) url += `&end_date=${endDate}`;
 
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  const res = await renderAwareFetch(url, { headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) throw new Error('Failed to fetch tickets');
   return res.json();
 }
@@ -813,10 +833,6 @@ export function formatAuthError(error: unknown): AuthErrorState {
   };
 }
 
-/**
- * Fetch customer payments.
- * Supports ordinary search calls and report-style filter objects.
- */
 export function fetchPayments(
   accessToken: string,
   queryOrOptions: string | ListQueryOptions = '',
@@ -907,7 +923,7 @@ export function uploadDocument(
   form.append('document_type', documentType);
   form.append('booking_id', String(bookingId));
 
-  return fetch(`${apiUrl}/api/documents`, {
+  return renderAwareFetch(`${apiUrl}/api/documents`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -933,7 +949,7 @@ export async function downloadDocument(
     throw new ApiError('Backend API URL (VITE_API_URL) is not configured.', 0, 'ENV_CONFIG_MISSING');
   }
 
-  const response = await fetch(`${apiUrl}/api/documents/${documentId}/download`, {
+  const response = await renderAwareFetch(`${apiUrl}/api/documents/${documentId}/download`, {
     headers: { Authorization: `Bearer ${accessToken}`, Accept: '*/*' },
   });
   if (!response.ok) {
@@ -1129,7 +1145,7 @@ export async function downloadSupplierBalancesCsv(accessToken: string): Promise<
     throw new ApiError('Backend API URL (VITE_API_URL) is not configured.', 0, 'ENV_CONFIG_MISSING');
   }
 
-  const response = await fetch(`${apiUrl}/api/financial-reports/supplier-balances.csv`, {
+  const response = await renderAwareFetch(`${apiUrl}/api/financial-reports/supplier-balances.csv`, {
     headers: { Authorization: `Bearer ${accessToken}`, Accept: 'text/csv' },
   });
   if (!response.ok) {
@@ -1203,8 +1219,8 @@ export function linkStaffSignIn(
 }
 
 export async function parseItineraryWithAI(token: string, rawText: string) {
-  const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
-  const response = await fetch(`${API_URL}/api/parse-itinerary`, {
+  const API_URL = 'https://abajifar-ticket-system.onrender.com';
+  const response = await renderAwareFetch(`${API_URL}/api/parse-itinerary`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -1219,8 +1235,8 @@ export async function parseItineraryWithAI(token: string, rawText: string) {
 }
 
 export async function fetchMarginSummary(token: string) {
-  const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
-  const res = await fetch(`${API_URL}/api/reports/margin-summary`, {
+  const API_URL = 'https://abajifar-ticket-system.onrender.com';
+  const res = await renderAwareFetch(`${API_URL}/api/reports/margin-summary`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw new Error('Failed to load summary');

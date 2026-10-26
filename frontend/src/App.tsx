@@ -117,25 +117,17 @@ const DashboardContent: React.FC = () => {
     setTab('dashboard');
   };
 
-  // No authenticated user: show the login screen.
-  if (!session) {
-    return <SignInForm />;
-  }
-
-  // Authenticated, but staff details are still loading.
-  if (isLoading && !staff && !authError) {
+  // 1. Initializing app or extracting indestructible backup from IndexedDB
+  if (isLoading && !authError) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-slate-100">
         <div className="w-12 h-12 rounded-xl bg-teal-900/60 border border-teal-500/30 flex items-center justify-center text-teal-300 mb-4 shadow-lg">
           <Building className="w-6 h-6 animate-pulse" />
         </div>
-
         <div className="w-5 h-5 border-2 border-teal-500/20 border-t-teal-400 rounded-full animate-spin mb-3" />
-
         <h2 className="text-base font-semibold text-white">
           Authenticating Staff Workspace
         </h2>
-
         <p className="text-xs text-slate-400 mt-1 max-w-sm text-center leading-relaxed">
           Retrieving verified staff profile from{' '}
           <code className="text-teal-400 font-mono">
@@ -147,7 +139,7 @@ const DashboardContent: React.FC = () => {
     );
   }
 
-  // Authentication succeeded, but staff verification failed.
+  // 2. Authentication succeeded, but staff verification failed.
   if (authError && !staff) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-slate-100">
@@ -207,6 +199,11 @@ const DashboardContent: React.FC = () => {
         </div>
       </div>
     );
+  }
+
+  // 3. Definitely no session (fully loaded, and token is missing/invalid)
+  if (!session) {
+    return <SignInForm />;
   }
 
   /**

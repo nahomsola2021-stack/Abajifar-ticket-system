@@ -11,12 +11,16 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
+    "@tauri-apps/api": "^2.12.4",
+    "@tauri-apps/plugin-store": "^2.5.0",
+    "localforage": "^1.10.0",
     "lucide-react": "^0.546.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
+    "@tauri-apps/cli": "^2.12.4",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",

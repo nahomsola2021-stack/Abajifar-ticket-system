@@ -8,5 +8,8 @@
     "build": "npm --prefix frontend run build",
     "lint": "npm --prefix frontend run lint",
     "typecheck": "node frontend/node_modules/typescript/bin/tsc -b frontend"
+  },
+  "dependencies": {
+    "@tauri-apps/plugin-store": "^2.5.0"
   }
 }

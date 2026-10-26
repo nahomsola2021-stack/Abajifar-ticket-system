@@ -20,16 +20,17 @@ export function getAppConfig(): AppConfig {
   // Read from Vite environment variables
   const envSupabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
   const envSupabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-  const envApiUrl = import.meta.env.VITE_API_URL || '';
+  // Hardcoded to bypass env load delays in Tauri
+  // const envApiUrl = import.meta.env.VITE_API_URL || '';
 
   // Check localStorage for overrides if env vars are empty
   const localSupabaseUrl = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY_SUPABASE_URL) || '' : '';
   const localSupabaseAnonKey = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY_SUPABASE_ANON_KEY) || '' : '';
-  const localApiUrl = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY_API_URL) || '' : '';
+  // localApiUrl removed; API URL is hardcoded
 
   const supabaseUrl = (envSupabaseUrl || localSupabaseUrl).trim();
   const supabaseAnonKey = (envSupabaseAnonKey || localSupabaseAnonKey).trim();
-  const apiUrl = (envApiUrl || localApiUrl).trim().replace(/\/+$/, ''); // Strip trailing slash
+  const apiUrl = 'https://abajifar-ticket-system.onrender.com';
 
   const missingKeys: string[] = [];
   if (!supabaseUrl) missingKeys.push('VITE_SUPABASE_URL');
