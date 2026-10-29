@@ -128,24 +128,24 @@ async function renderAwareFetch(url: RequestInfo | URL, options?: RequestInit): 
   for (let i = 0; i < maxRetries; i++) {
     try {
       const response = await fetch(url, options);
-      
+
       // Handle Render HTML error pages returned while the container is booting
       if (response.status === 502 || response.status === 503 || response.status === 504) {
         if (i === maxRetries - 1) return response;
         console.warn(`[API] Backend waking up (Status: ${response.status}). Retrying in ${delayMs / 1000}s...`);
-        await new Promise(res => setTimeout(res, delayMs));
+        await new Promise((res) => setTimeout(res, delayMs));
         continue;
       }
-      
+
       return response;
     } catch (error) {
       // Handle missing CORS headers or strict timeouts caused by the asleep container
       if (i === maxRetries - 1) throw error;
       console.warn(`[API] Network error (CORS/Offline). Backend likely asleep. Retrying in ${delayMs / 1000}s...`);
-      await new Promise(res => setTimeout(res, delayMs));
+      await new Promise((res) => setTimeout(res, delayMs));
     }
   }
-  throw new Error("Backend failed to wake up after multiple attempts.");
+  throw new Error('Backend failed to wake up after multiple attempts.');
 }
 
 /**
@@ -175,9 +175,10 @@ function validateStaffIdentity(data: unknown): StaffIdentity {
     throw new ApiError('Missing full_name in staff profile', 500, 'MALFORMED_DATA');
   }
 
-  const branch_id = obj.branch_id === null || obj.branch_id === undefined
-    ? null
-    : normalizeIdentifier(obj.branch_id);
+  const branch_id =
+    obj.branch_id === null || obj.branch_id === undefined
+      ? null
+      : normalizeIdentifier(obj.branch_id);
   if (obj.branch_id !== null && obj.branch_id !== undefined && branch_id === null) {
     throw new ApiError('Invalid branch_id in staff profile', 500, 'MALFORMED_DATA');
   }
@@ -203,7 +204,7 @@ function validateStaffIdentity(data: unknown): StaffIdentity {
     throw new ApiError(
       'Staff account is inactive or suspended. Please contact your Ticket Office branch administrator.',
       403,
-      'INACTIVE_ACCOUNT'
+      'INACTIVE_ACCOUNT',
     );
   }
 
@@ -252,7 +253,7 @@ function validateDashboardOverview(data: unknown): DashboardOverview {
       throw new ApiError(
         `Malformed dashboard overview metrics: expected numeric count for ${field}`,
         500,
-        'MALFORMED_DATA'
+        'MALFORMED_DATA',
       );
     }
     counts[field] = value;
@@ -273,7 +274,7 @@ function validateDashboardOverview(data: unknown): DashboardOverview {
       throw new ApiError(
         `Malformed dashboard overview metrics: expected an array for ${field}`,
         500,
-        'MALFORMED_DATA'
+        'MALFORMED_DATA',
       );
     }
     currencyLists[field] = raw.map((entry) => {
@@ -284,7 +285,7 @@ function validateDashboardOverview(data: unknown): DashboardOverview {
         throw new ApiError(
           `Malformed dashboard currency total in ${field}`,
           500,
-          'MALFORMED_DATA'
+          'MALFORMED_DATA',
         );
       }
       return { currency: item.currency, amount: String(amount), count };
@@ -296,7 +297,7 @@ function validateDashboardOverview(data: unknown): DashboardOverview {
     throw new ApiError(
       'Malformed dashboard overview metrics: expected an array for recent_activity',
       500,
-      'MALFORMED_DATA'
+      'MALFORMED_DATA',
     );
   }
   const recentActivity = rawActivity.map((entry) => {
@@ -329,7 +330,7 @@ export async function fetchStaffIdentity(accessToken: string): Promise<StaffIden
     throw new ApiError(
       'Backend API URL (VITE_API_URL) is not configured.',
       0,
-      'ENV_CONFIG_MISSING'
+      'ENV_CONFIG_MISSING',
     );
   }
 
@@ -351,7 +352,7 @@ export async function fetchStaffIdentity(accessToken: string): Promise<StaffIden
       `Unable to connect to Ticket Office API at ${apiUrl}. Verify server status and CORS configuration.`,
       0,
       'BACKEND_CONNECTION_ERROR',
-      err instanceof Error ? err.message : String(err)
+      err instanceof Error ? err.message : String(err),
     );
   }
 
@@ -364,7 +365,7 @@ export async function fetchStaffIdentity(accessToken: string): Promise<StaffIden
     throw new ApiError(
       errorDetail || 'Access denied. Contact an administrator to verify your staff account.',
       403,
-      'INACTIVE_ACCOUNT'
+      'INACTIVE_ACCOUNT',
     );
   }
 
@@ -373,7 +374,7 @@ export async function fetchStaffIdentity(accessToken: string): Promise<StaffIden
     throw new ApiError(
       errorDetail || 'No associated staff profile was found. An administrator must provision your staff record.',
       404,
-      'MISSING_STAFF_PROFILE'
+      'MISSING_STAFF_PROFILE',
     );
   }
 
@@ -383,7 +384,7 @@ export async function fetchStaffIdentity(accessToken: string): Promise<StaffIden
       `Failed to load staff profile (${response.status}): ${errorDetail || 'Server error'}`,
       response.status,
       'API_ERROR',
-      errorDetail
+      errorDetail,
     );
   }
 
@@ -401,7 +402,7 @@ export async function fetchDashboardOverview(accessToken: string): Promise<Dashb
     throw new ApiError(
       'Backend API URL (VITE_API_URL) is not configured.',
       0,
-      'ENV_CONFIG_MISSING'
+      'ENV_CONFIG_MISSING',
     );
   }
 
@@ -423,7 +424,7 @@ export async function fetchDashboardOverview(accessToken: string): Promise<Dashb
       `Failed to connect to backend overview endpoint at ${apiUrl}. Check CORS headers and connectivity.`,
       0,
       'BACKEND_CONNECTION_ERROR',
-      err instanceof Error ? err.message : String(err)
+      err instanceof Error ? err.message : String(err),
     );
   }
 
@@ -435,7 +436,7 @@ export async function fetchDashboardOverview(accessToken: string): Promise<Dashb
     throw new ApiError(
       'Your staff permissions do not permit viewing operations overview metrics.',
       403,
-      'INACTIVE_ACCOUNT'
+      'INACTIVE_ACCOUNT',
     );
   }
 
@@ -451,7 +452,7 @@ export async function fetchDashboardOverview(accessToken: string): Promise<Dashb
       `Dashboard overview error (${response.status}): ${errorDetail}`,
       response.status,
       'OVERVIEW_ERROR',
-      errorDetail
+      errorDetail,
     );
   }
 
@@ -702,12 +703,14 @@ export function fetchBookingDetails(accessToken: string, bookingId: number): Pro
 
 export function fetchTicketSuppliers(accessToken: string): Promise<TicketSupplierRecord[]> {
   return customerRequest<SupplierRecord[]>(accessToken, '/api/suppliers?ticketing_only=true')
-    .then((suppliers) => suppliers.map((supplier) => ({
-      id: supplier.id,
-      supplier_type: supplier.supplier_type as TicketSupplierRecord['supplier_type'],
-      display_name: supplier.trading_name || supplier.legal_name,
-      settlement_currency: supplier.settlement_currency,
-    })));
+    .then((suppliers) =>
+      suppliers.map((supplier) => ({
+        id: supplier.id,
+        supplier_type: supplier.supplier_type as TicketSupplierRecord['supplier_type'],
+        display_name: supplier.trading_name || supplier.legal_name,
+        settlement_currency: supplier.settlement_currency,
+      })),
+    );
 }
 
 export function recordBookingTicket(
@@ -899,6 +902,10 @@ export function removeFlightSegment(accessToken: string, bookingId: number, segm
   });
 }
 
+/* =========================================================================
+   DOCUMENT MANAGEMENT & IN-APP PREVIEW
+========================================================================= */
+
 export function fetchDocuments(
   accessToken: string,
   bookingId: number,
@@ -939,25 +946,49 @@ export function uploadDocument(
   });
 }
 
-export async function downloadDocument(
+/**
+ * Fetches the document binary blob for browser preview (PDF viewer / Image viewer).
+ */
+export async function fetchDocumentBlob(
   accessToken: string,
   documentId: number,
-  filename: string,
-): Promise<void> {
+): Promise<Blob> {
   const { apiUrl } = getAppConfig();
   if (!apiUrl) {
     throw new ApiError('Backend API URL (VITE_API_URL) is not configured.', 0, 'ENV_CONFIG_MISSING');
   }
 
-  const response = await renderAwareFetch(`${apiUrl}/api/documents/${documentId}/download`, {
-    headers: { Authorization: `Bearer ${accessToken}`, Accept: '*/*' },
-  });
-  if (!response.ok) {
-    const detail = await getErrorDetail(response);
-    throw new ApiError(detail || `Download failed (${response.status}).`, response.status, 'API_ERROR');
+  let response: Response;
+  try {
+    response = await renderAwareFetch(`${apiUrl}/api/documents/${documentId}/download`, {
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: '*/*' },
+    });
+  } catch (error) {
+    throw new ApiError(
+      `Could not reach the backend at ${apiUrl}. Check server status and CORS configuration.`,
+      0,
+      'BACKEND_CONNECTION_ERROR',
+      error instanceof Error ? error.message : String(error),
+    );
   }
 
-  const blob = await response.blob();
+  if (!response.ok) {
+    const detail = await getErrorDetail(response);
+    throw new ApiError(detail || `Failed to fetch document (${response.status}).`, response.status, 'API_ERROR');
+  }
+
+  return response.blob();
+}
+
+/**
+ * Triggers a browser file download using the retrieved document blob.
+ */
+export async function downloadDocument(
+  accessToken: string,
+  documentId: number,
+  filename: string,
+): Promise<void> {
+  const blob = await fetchDocumentBlob(accessToken, documentId);
   const downloadUrl = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = downloadUrl;
@@ -967,6 +998,19 @@ export async function downloadDocument(
   link.remove();
   window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
 }
+
+/**
+ * Deletes an attached document by ID.
+ */
+export function deleteDocument(accessToken: string, documentId: number): Promise<void> {
+  return customerRequest<void>(accessToken, `/api/documents/${documentId}`, {
+    method: 'DELETE',
+  });
+}
+
+/* =========================================================================
+   TICKETING REQUESTS
+========================================================================= */
 
 export function fetchTicketingRequests(
   accessToken: string,
@@ -1007,6 +1051,10 @@ export function updateTicketingRequestStatus(
     },
   );
 }
+
+/* =========================================================================
+   SUPPLIER BILLS & EXPENSES
+========================================================================= */
 
 export function fetchSupplierBills(
   accessToken: string,
@@ -1164,6 +1212,10 @@ export async function downloadSupplierBalancesCsv(accessToken: string): Promise<
   window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
 }
 
+/* =========================================================================
+   STAFF ADMINISTRATION
+========================================================================= */
+
 export function fetchStaffAdminOptions(accessToken: string): Promise<StaffAdminOptions> {
   return customerRequest<StaffAdminOptions>(accessToken, '/api/admin/staff/options');
 }
@@ -1217,6 +1269,10 @@ export function linkStaffSignIn(
     { method: 'POST' },
   );
 }
+
+/* =========================================================================
+   AI PARSER & REPORTING
+========================================================================= */
 
 export async function parseItineraryWithAI(token: string, rawText: string) {
   const API_URL = 'https://abajifar-ticket-system.onrender.com';

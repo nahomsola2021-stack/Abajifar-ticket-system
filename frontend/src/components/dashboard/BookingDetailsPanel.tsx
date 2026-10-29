@@ -9,10 +9,14 @@ import {
   CheckCircle2,
   CreditCard,
   Download,
+  ExternalLink,
+  Eye,
   FastForward,
+  FileImage,
   FileText,
   History,
   Info,
+  Loader2,
   Paperclip,
   Plane,
   Plus,
@@ -37,6 +41,7 @@ import {
   downloadDocument,
   fetchBookingDetails,
   fetchBookingStatusHistory,
+  fetchDocumentBlob,
   fetchDocuments,
   fetchInvoices,
   fetchTicketSuppliers,
@@ -291,6 +296,15 @@ export const BookingDetailsPanel: React.FC<BookingDetailsPanelProps> = ({
   const [documentsRefreshKey, setDocumentsRefreshKey] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Document Viewer Preview Modal State
+  const [previewDoc, setPreviewDoc] = useState<{
+    doc: DocumentRecord;
+    url: string;
+    isPdf: boolean;
+    isImage: boolean;
+  } | null>(null);
+  const [previewingDocumentId, setPreviewingDocumentId] = useState<number | null>(null);
+
   const [bookingStatusHistory, setBookingStatusHistory] = useState<
     BookingStatusHistoryEntry[] | null
   >(null);
@@ -303,6 +317,25 @@ export const BookingDetailsPanel: React.FC<BookingDetailsPanelProps> = ({
     const timer = window.setTimeout(() => setSuccess(null), 4500);
     return () => window.clearTimeout(timer);
   }, [success]);
+
+  // Handle closing Document Preview Modal and free memory
+  const handleClosePreview = () => {
+    if (previewDoc?.url) {
+      URL.revokeObjectURL(previewDoc.url);
+    }
+    setPreviewDoc(null);
+  };
+
+  // Close modal when user presses Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && previewDoc) {
+        handleClosePreview();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [previewDoc]);
 
   const handleAIParse = async () => {
     if (!accessToken || !gdsText.trim()) return;
@@ -947,6 +980,34 @@ export const BookingDetailsPanel: React.FC<BookingDetailsPanelProps> = ({
     }
   };
 
+  // Preview Document in In-App Modal
+  const handlePreviewDocument = async (doc: DocumentRecord) => {
+    if (!accessToken) return;
+    setPreviewingDocumentId(doc.id);
+    setError(null);
+    try {
+      const blob = await fetchDocumentBlob(accessToken, doc.id);
+      const url = URL.createObjectURL(blob);
+      const filename = doc.original_filename.toLowerCase();
+      const isPdf = filename.endsWith('.pdf') || blob.type === 'application/pdf';
+      const isImage =
+        /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(filename) || blob.type.startsWith('image/');
+
+      setPreviewDoc({
+        doc,
+        url,
+        isPdf,
+        isImage,
+      });
+    } catch (requestError: unknown) {
+      setError(
+        requestError instanceof Error ? requestError.message : 'Could not open document preview.',
+      );
+    } finally {
+      setPreviewingDocumentId(null);
+    }
+  };
+
   const isLocked = LOCKED_BOOKING_STATUSES.has(booking.status);
   const issuedCount =
     details?.tickets.filter((t) => ['issued', 'exchanged'].includes(t.ticket_status)).length ?? 0;
@@ -1153,7 +1214,7 @@ export const BookingDetailsPanel: React.FC<BookingDetailsPanelProps> = ({
           </div>
 
           {/* =================================================================
-              STEP 1: FLIGHT ROUTE (WITH TIME VALIDATION GUARD)
+              STEP 1: FLIGHT ROUTE
           ================================================================= */}
           {activeStep === 1 && (
             <div className="space-y-4 animate-in fade-in duration-200">
@@ -1375,10 +1436,9 @@ export const BookingDetailsPanel: React.FC<BookingDetailsPanelProps> = ({
                           onChange={(e) => {
                             const newDep = e.target.value;
                             setDepartureAt(newDep);
-                            // Auto-nudge arrival if it's currently before departure
                             if (arrivalAt && new Date(arrivalAt) <= new Date(newDep)) {
                               const d = new Date(newDep);
-                              d.setHours(d.getHours() + 3); // default 3 hour flight duration
+                              d.setHours(d.getHours() + 3);
                               setArrivalAt(d.toISOString().slice(0, 16));
                             }
                           }}
@@ -2529,6 +2589,7 @@ export const BookingDetailsPanel: React.FC<BookingDetailsPanelProps> = ({
                 </section>
               )}
 
+              {/* DOCUMENTS SUBTAB WITH INLINE VIEW / PREVIEW BUTTONS */}
               {step6SubTab === 'docs' && (
                 <section className="rounded-2xl border border-slate-200 bg-white p-5">
                   <h3 className="flex items-center gap-2 text-sm font-bold text-slate-900">
@@ -2536,7 +2597,7 @@ export const BookingDetailsPanel: React.FC<BookingDetailsPanelProps> = ({
                     Private Booking Attachments ({documents.length})
                   </h3>
                   <p className="mt-1 text-xs text-slate-500">
-                    Store passport copies, GDS confirmations, and e-ticket PDFs (max 10 MB).
+                    Store passport copies, GDS confirmations, and e-ticket PDFs (max 10 MB). Click <strong>View</strong> to preview any document in your browser.
                   </p>
 
                   {documents.length === 0 ? (
@@ -2544,36 +2605,73 @@ export const BookingDetailsPanel: React.FC<BookingDetailsPanelProps> = ({
                       No files attached to this booking yet.
                     </p>
                   ) : (
-                    <ul className="mt-3 divide-y divide-slate-100 rounded-xl border border-slate-200">
-                      {documents.map((doc) => (
-                        <li
-                          key={doc.id}
-                          className="flex items-center justify-between gap-3 px-3.5 py-2.5 text-xs"
-                        >
-                          <div className="flex min-w-0 items-center gap-2.5">
-                            <FileText className="h-4 w-4 shrink-0 text-teal-700" />
-                            <div className="min-w-0">
-                              <p className="truncate font-semibold text-slate-800">
-                                {doc.original_filename}
-                              </p>
-                              <p className="text-[10px] text-slate-500">
-                                {DOCUMENT_TYPE_LABELS.find((i) => i.value === doc.document_type)
-                                  ?.label ?? doc.document_type}
-                                {doc.file_size_bytes !== null &&
-                                  ` · ${Math.max(1, Math.round(doc.file_size_bytes / 1024))} KB`}
-                              </p>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => void handleDownloadDocument(doc)}
-                            disabled={downloadingDocumentId === doc.id}
-                            className="rounded-md border border-slate-200 p-1.5 text-slate-600 hover:bg-slate-100"
+                    <ul className="mt-3 divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white">
+                      {documents.map((doc) => {
+                        const filename = doc.original_filename.toLowerCase();
+                        const isImg = /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(filename);
+                        const isPdf = filename.endsWith('.pdf');
+
+                        return (
+                          <li
+                            key={doc.id}
+                            className="flex flex-wrap items-center justify-between gap-3 px-3.5 py-2.5 text-xs transition-colors hover:bg-slate-50/70"
                           >
-                            <Download className="h-4 w-4" />
-                          </button>
-                        </li>
-                      ))}
+                            <div className="flex min-w-0 items-center gap-2.5">
+                              {isImg ? (
+                                <FileImage className="h-4 w-4 shrink-0 text-emerald-600" />
+                              ) : isPdf ? (
+                                <FileText className="h-4 w-4 shrink-0 text-rose-600" />
+                              ) : (
+                                <FileText className="h-4 w-4 shrink-0 text-teal-700" />
+                              )}
+                              <div className="min-w-0">
+                                <p className="truncate font-semibold text-slate-800">
+                                  {doc.original_filename}
+                                </p>
+                                <p className="text-[10px] text-slate-500">
+                                  {DOCUMENT_TYPE_LABELS.find((i) => i.value === doc.document_type)
+                                    ?.label ?? doc.document_type}
+                                  {doc.file_size_bytes !== null &&
+                                    ` · ${Math.max(1, Math.round(doc.file_size_bytes / 1024))} KB`}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1.5">
+                              {/* VIEW / PREVIEW BUTTON */}
+                              <button
+                                type="button"
+                                onClick={() => void handlePreviewDocument(doc)}
+                                disabled={previewingDocumentId === doc.id}
+                                title="View document"
+                                className="inline-flex items-center gap-1 rounded-lg border border-teal-200 bg-teal-50 px-2.5 py-1.5 text-xs font-semibold text-teal-800 shadow-2xs transition-colors hover:bg-teal-100 disabled:opacity-50"
+                              >
+                                {previewingDocumentId === doc.id ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Eye className="h-3.5 w-3.5" />
+                                )}
+                                <span>View</span>
+                              </button>
+
+                              {/* DOWNLOAD BUTTON */}
+                              <button
+                                type="button"
+                                onClick={() => void handleDownloadDocument(doc)}
+                                disabled={downloadingDocumentId === doc.id}
+                                title="Download attachment"
+                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1.5 text-xs font-semibold text-slate-600 shadow-2xs hover:bg-slate-100 disabled:opacity-50"
+                              >
+                                {downloadingDocumentId === doc.id ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Download className="h-3.5 w-3.5" />
+                                )}
+                              </button>
+                            </div>
+                          </li>
+                        );
+                      })}
                     </ul>
                   )}
 
@@ -2688,6 +2786,94 @@ export const BookingDetailsPanel: React.FC<BookingDetailsPanelProps> = ({
               </button>
             )}
           </div>
+
+          {/* =================================================================
+              IN-APP DOCUMENT PREVIEW MODAL (PDF / IMAGE VIEWER)
+          ================================================================= */}
+          {previewDoc && (
+            <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/75 p-3 sm:p-6 backdrop-blur-sm animate-in fade-in duration-200">
+              <div className="flex h-full max-h-[92vh] w-full max-w-5xl flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
+                {/* Modal Header */}
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50/80 px-4 py-3 sm:px-6">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    {previewDoc.isImage ? (
+                      <FileImage className="h-5 w-5 shrink-0 text-emerald-600" />
+                    ) : (
+                      <FileText className="h-5 w-5 shrink-0 text-teal-700" />
+                    )}
+                    <div className="min-w-0">
+                      <h3 className="truncate text-sm font-bold text-slate-900">
+                        {previewDoc.doc.original_filename}
+                      </h3>
+                      <p className="text-[11px] text-slate-500">
+                        {DOCUMENT_TYPE_LABELS.find(
+                          (t) => t.value === previewDoc.doc.document_type,
+                        )?.label ?? previewDoc.doc.document_type}
+                        {previewDoc.doc.file_size_bytes &&
+                          ` · ${Math.max(1, Math.round(previewDoc.doc.file_size_bytes / 1024))} KB`}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {/* Open in new browser window/tab */}
+                    <a
+                      href={previewDoc.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-100"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">Pop Out</span>
+                    </a>
+
+                    {/* Download file directly */}
+                    <button
+                      type="button"
+                      onClick={() => void handleDownloadDocument(previewDoc.doc)}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-teal-700 px-3 py-1.5 text-xs font-semibold text-white shadow-2xs hover:bg-teal-800"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">Download</span>
+                    </button>
+
+                    {/* Close button */}
+                    <button
+                      type="button"
+                      onClick={handleClosePreview}
+                      aria-label="Close Preview"
+                      className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Modal Preview Body */}
+                <div className="flex-1 overflow-auto bg-slate-900/95 p-3 flex items-center justify-center">
+                  {previewDoc.isImage ? (
+                    <img
+                      src={previewDoc.url}
+                      alt={previewDoc.doc.original_filename}
+                      className="max-h-[76vh] max-w-full rounded-lg object-contain shadow-2xl"
+                    />
+                  ) : previewDoc.isPdf ? (
+                    <iframe
+                      src={`${previewDoc.url}#toolbar=1`}
+                      title={previewDoc.doc.original_filename}
+                      className="h-[76vh] w-full rounded-xl border border-slate-800 bg-white shadow-2xl"
+                    />
+                  ) : (
+                    <iframe
+                      src={previewDoc.url}
+                      title={previewDoc.doc.original_filename}
+                      className="h-[76vh] w-full rounded-xl border border-slate-800 bg-white p-4 font-mono text-xs shadow-2xl"
+                    />
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Centered Collect Payment Modal */}
           {isPaymentModalOpen && (
