@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link2, Lock, Pencil, Plus, Trash2, UserPlus, Users } from 'lucide-react';
+import { Eye, EyeOff, Link2, Lock, Pencil, Plus, Trash2, UserPlus, Users } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import {
   createStaffWithPassword,
@@ -65,7 +65,12 @@ const RoleChoices: React.FC<{
             selected.includes(role.id) ? 'border-teal-600 bg-teal-50' : 'border-slate-200 hover:bg-slate-50'
           }`}
         >
-          <input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-teal-700" checked={selected.includes(role.id)} onChange={() => onToggle(role.id)} />
+          <input
+            type="checkbox"
+            className="mt-1 h-4 w-4 shrink-0 accent-teal-700"
+            checked={selected.includes(role.id)}
+            onChange={() => onToggle(role.id)}
+          />
           <span className="min-w-0">
             <span className="block text-sm font-semibold text-slate-900">{roleName(role.code)}</span>
             <span className="block text-sm text-slate-500">{role.description}</span>
@@ -95,6 +100,10 @@ export const StaffManagementView: React.FC<StaffManagementViewProps> = () => {
   const [linkRoleIds, setLinkRoleIds] = useState<number[]>([]);
   const [linkPassword, setLinkPassword] = useState('');
   const [linkConfirmPassword, setLinkConfirmPassword] = useState('');
+
+  // Password visibility eye toggles
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [editingStaffId, setEditingStaffId] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null);
@@ -143,6 +152,8 @@ export const StaffManagementView: React.FC<StaffManagementViewProps> = () => {
     setLinkRoleIds([]);
     setLinkPassword('');
     setLinkConfirmPassword('');
+    setShowPassword(false);
+    setShowConfirmPassword(false);
   };
 
   const handleLinkStaff = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -262,7 +273,15 @@ export const StaffManagementView: React.FC<StaffManagementViewProps> = () => {
         description="Choose who works in each office and what they are allowed to do."
         action={
           isAdministrator && (
-            <button type="button" onClick={() => { setError(null); setSuccess(null); setIsLinkFormOpen(true); }} className={btnPrimary}>
+            <button
+              type="button"
+              onClick={() => {
+                setError(null);
+                setSuccess(null);
+                setIsLinkFormOpen(true);
+              }}
+              className={btnPrimary}
+            >
               <UserPlus className="h-4 w-4" />
               Add team member
             </button>
@@ -285,7 +304,12 @@ export const StaffManagementView: React.FC<StaffManagementViewProps> = () => {
 
           <Card>
             <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 p-4">
-              <input className="border rounded px-2 py-1" value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="Search by name, email, office or role" />
+              <input
+                className="rounded border border-slate-300 px-2.5 py-1 text-sm focus:border-teal-600 focus:outline-none"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by name, email, office or role"
+              />
               <p className="text-sm text-slate-600">
                 {staffRecords.filter((record) => record.is_active).length} active of {staffRecords.length}
               </p>
@@ -322,7 +346,9 @@ export const StaffManagementView: React.FC<StaffManagementViewProps> = () => {
                             {record.roles.length === 0 ? (
                               <StatusBadge label="No role" tone="bad" />
                             ) : (
-                              record.roles.map((code) => <StatusBadge key={code} label={roleName(code)} tone={ROLE_LABELS[code]?.tone ?? 'neutral'} />)
+                              record.roles.map((code) => (
+                                <StatusBadge key={code} label={roleName(code)} tone={ROLE_LABELS[code]?.tone ?? 'neutral'} />
+                              ))
                             )}
                           </div>
                         </td>
@@ -335,12 +361,22 @@ export const StaffManagementView: React.FC<StaffManagementViewProps> = () => {
                         <td className="px-4 py-4">
                           <div className="flex items-center justify-end gap-1">
                             {record.has_sign_in === false && (
-                              <button type="button" onClick={() => void handleLinkSignIn(record)} disabled={linkingStaffId === record.staff_id} className={btnGhost}>
+                              <button
+                                type="button"
+                                onClick={() => void handleLinkSignIn(record)}
+                                disabled={linkingStaffId === record.staff_id}
+                                className={btnGhost}
+                              >
                                 <Link2 className="h-4 w-4" />
                                 {linkingStaffId === record.staff_id ? 'Setting up…' : 'Set up sign-in'}
                               </button>
                             )}
-                            <button type="button" onClick={() => startEditing(record)} className={btnGhost} aria-label={`Change access for ${record.full_name}`}>
+                            <button
+                              type="button"
+                              onClick={() => startEditing(record)}
+                              className={btnGhost}
+                              aria-label={`Change access for ${record.full_name}`}
+                            >
                               <Pencil className="h-4 w-4" />
                               Change access
                             </button>
@@ -364,40 +400,115 @@ export const StaffManagementView: React.FC<StaffManagementViewProps> = () => {
         </>
       )}
 
+      {/* ADD A TEAM MEMBER MODAL */}
       {isAdministrator && isLinkFormOpen && (
-        <Dialog title="Add a team member" description="They sign in with their work email and the password you set here." onClose={closeAddForm} size="lg">
+        <Dialog
+          title="Add a team member"
+          description="They sign in with their work email and the password you set here."
+          onClose={closeAddForm}
+          size="lg"
+        >
           <form onSubmit={handleLinkStaff} className="space-y-5">
             {error && <Notice kind="error">{error}</Notice>}
             <div className="grid gap-4 sm:grid-cols-2">
               <label className={labelCls}>
                 Full name
-                <input required maxLength={160} value={linkName} onChange={(event) => setLinkName(event.target.value)} className={inputCls} />
+                <input
+                  required
+                  maxLength={160}
+                  value={linkName}
+                  onChange={(event) => setLinkName(event.target.value)}
+                  className={inputCls}
+                />
               </label>
               <label className={labelCls}>
                 Work email
-                <input required type="email" maxLength={254} value={linkEmail} onChange={(event) => setLinkEmail(event.target.value)} placeholder="name@example.com" className={inputCls} />
+                <input
+                  required
+                  type="email"
+                  maxLength={254}
+                  value={linkEmail}
+                  onChange={(event) => setLinkEmail(event.target.value)}
+                  placeholder="name@example.com"
+                  className={inputCls}
+                />
               </label>
               <label className={`${labelCls} sm:col-span-2`}>
                 Office
-                <select required value={linkBranchId} onChange={(event) => setLinkBranchId(Number(event.target.value))} className={inputCls}>
+                <select
+                  required
+                  value={linkBranchId}
+                  onChange={(event) => setLinkBranchId(Number(event.target.value))}
+                  className={inputCls}
+                >
                   {options?.branches.map((branch) => (
-                    <option key={branch.id} value={branch.id}>{branch.name} ({branch.code})</option>
+                    <option key={branch.id} value={branch.id}>
+                      {branch.name} ({branch.code})
+                    </option>
                   ))}
                 </select>
               </label>
+
+              {/* FIRST PASSWORD WITH EYE TOGGLE */}
               <label className={labelCls}>
                 First password
-                <input required type="password" minLength={8} value={linkPassword} onChange={(event) => setLinkPassword(event.target.value)} className={inputCls} />
+                <div className="relative">
+                  <input
+                    required
+                    type={showPassword ? 'text' : 'password'}
+                    minLength={8}
+                    value={linkPassword}
+                    onChange={(event) => setLinkPassword(event.target.value)}
+                    className={`${inputCls} pr-10`}
+                  />
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 transition-colors hover:text-slate-600 focus:outline-none"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
                 <span className={hintCls}>At least 8 characters</span>
               </label>
+
+              {/* CONFIRM PASSWORD WITH EYE TOGGLE */}
               <label className={labelCls}>
                 Type it again
-                <input required type="password" minLength={8} value={linkConfirmPassword} onChange={(event) => setLinkConfirmPassword(event.target.value)} className={inputCls} />
+                <div className="relative">
+                  <input
+                    required
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    minLength={8}
+                    value={linkConfirmPassword}
+                    onChange={(event) => setLinkConfirmPassword(event.target.value)}
+                    className={`${inputCls} pr-10`}
+                  />
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    onClick={() => setShowConfirmPassword((prev) => !prev)}
+                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 transition-colors hover:text-slate-600 focus:outline-none"
+                    aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
               </label>
             </div>
-            <RoleChoices roles={roleOptions} selected={linkRoleIds} onToggle={(id) => setLinkRoleIds((current) => toggle(id, current))} />
+
+            <RoleChoices
+              roles={roleOptions}
+              selected={linkRoleIds}
+              onToggle={(id) => setLinkRoleIds((current) => toggle(id, current))}
+            />
+
             <div className="flex justify-end gap-2">
-              <button type="button" onClick={closeAddForm} className={btnSecondary}>Cancel</button>
+              <button type="button" onClick={closeAddForm} className={btnSecondary}>
+                Cancel
+              </button>
               <button type="submit" disabled={isSaving} className={btnPrimary}>
                 <Plus className="h-4 w-4" />
                 {isSaving ? 'Adding…' : 'Add team member'}
@@ -407,6 +518,7 @@ export const StaffManagementView: React.FC<StaffManagementViewProps> = () => {
         </Dialog>
       )}
 
+      {/* EDIT ACCESS MODAL */}
       {isAdministrator && editingStaffId !== null && editDraft && (
         <Dialog title="Change access" description={editingRecord?.full_name} onClose={closeEdit} size="lg">
           <form onSubmit={handleSaveAccess} className="space-y-5">
@@ -416,25 +528,33 @@ export const StaffManagementView: React.FC<StaffManagementViewProps> = () => {
               <select
                 required
                 value={editDraft.branch_id}
-                onChange={(event) => setEditDraft((current) => (current ? { ...current, branch_id: Number(event.target.value) } : current))}
+                onChange={(event) =>
+                  setEditDraft((current) => (current ? { ...current, branch_id: Number(event.target.value) } : current))
+                }
                 className={inputCls}
               >
                 {options?.branches.map((branch) => (
-                  <option key={branch.id} value={branch.id}>{branch.name} ({branch.code})</option>
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name} ({branch.code})
+                  </option>
                 ))}
               </select>
             </label>
             <RoleChoices
               roles={roleOptions}
               selected={editDraft.role_ids}
-              onToggle={(id) => setEditDraft((current) => (current ? { ...current, role_ids: toggle(id, current.role_ids) } : current))}
+              onToggle={(id) =>
+                setEditDraft((current) => (current ? { ...current, role_ids: toggle(id, current.role_ids) } : current))
+              }
             />
             <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 px-3.5 py-3">
               <input
                 type="checkbox"
                 className="mt-1 h-4 w-4 shrink-0 accent-teal-700"
                 checked={editDraft.is_active}
-                onChange={(event) => setEditDraft((current) => (current ? { ...current, is_active: event.target.checked } : current))}
+                onChange={(event) =>
+                  setEditDraft((current) => (current ? { ...current, is_active: event.target.checked } : current))
+                }
               />
               <span>
                 <span className="block text-sm font-semibold text-slate-900">This person can sign in</span>
@@ -442,8 +562,12 @@ export const StaffManagementView: React.FC<StaffManagementViewProps> = () => {
               </span>
             </label>
             <div className="flex justify-end gap-2">
-              <button type="button" onClick={closeEdit} className={btnSecondary}>Cancel</button>
-              <button type="submit" disabled={isSaving} className={btnPrimary}>{isSaving ? 'Saving…' : 'Save changes'}</button>
+              <button type="button" onClick={closeEdit} className={btnSecondary}>
+                Cancel
+              </button>
+              <button type="submit" disabled={isSaving} className={btnPrimary}>
+                {isSaving ? 'Saving…' : 'Save changes'}
+              </button>
             </div>
           </form>
         </Dialog>
