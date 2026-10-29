@@ -82,9 +82,9 @@ const AVAILABLE_NEXT_STATUSES: Partial<Record<string, BookingStatus[]>> = {
   quoted: ['confirmed', 'cancelled', 'expired'],
   confirmed: ['ticketing_pending', 'cancelled'],
   ticketing_pending: ['cancelled'],
-  ticketed: ['closed'],
-  cancelled: ['closed'],
-  expired: ['closed'],
+  ticketed: [], // No unsupported 'closed' transition that triggers backend validation failure
+  cancelled: [],
+  expired: [],
 };
 
 const GDS_PRESETS = ['Amadeus', 'Galileo', 'Sabre', 'Ethiopian Airlines', 'Direct Airline'];
