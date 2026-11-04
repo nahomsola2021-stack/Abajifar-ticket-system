@@ -288,6 +288,12 @@ export const BookingDetailsPanel: React.FC<BookingDetailsPanelProps> = ({
   const [paymentCurrency, setPaymentCurrency] = useState('ETB');
   const [paymentNotes, setPaymentNotes] = useState('');
   const [isSavingPayment, setIsSavingPayment] = useState(false);
+  const [isRefundModalOpen, setIsRefundModalOpen] = useState(false);
+  const [refundAmount, setRefundAmount] = useState('');
+  const [refundMethod, setRefundMethod] = useState<PaymentMethod>('cash');
+  const [refundCurrency, setRefundCurrency] = useState('ETB');
+  const [refundNotes, setRefundNotes] = useState('');
+  const [isSavingRefund, setIsSavingRefund] = useState(false);
 
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [documentType, setDocumentType] = useState<DocumentType>('booking_confirmation');
@@ -938,6 +944,47 @@ export const BookingDetailsPanel: React.FC<BookingDetailsPanelProps> = ({
       );
     } finally {
       setIsSavingPayment(false);
+    }
+  };
+
+  const handleProcessRefund = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!accessToken) return;
+    const numericRefund = parseCommaNumber(refundAmount);
+    if (!refundAmount || !Number.isFinite(numericRefund) || numericRefund <= 0) {
+      setError('Enter a valid refund amount greater than zero.');
+      return;
+    }
+    setIsSavingRefund(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const signedRefund = -Math.abs(numericRefund);
+      const created = await createPayment(accessToken, {
+        customer_id: booking.customer_id,
+        currency: refundCurrency.trim().toUpperCase(),
+        amount: signedRefund,
+        payment_method: refundMethod,
+        notes: [
+          `Refund for booking ${booking.booking_code}`,
+          refundNotes.trim(),
+        ]
+          .filter(Boolean)
+          .join('. '),
+      });
+      setSuccess(
+        `Refund ${created.receipt_number ?? `#${created.id}`} recorded for ${refundCurrency.toUpperCase()} ${formatNumberWithCommas(String(numericRefund))}.`,
+      );
+      setIsRefundModalOpen(false);
+      setRefundAmount('');
+      setRefundNotes('');
+      setInvoicesRefreshKey((k) => k + 1);
+    } catch (requestError: unknown) {
+      setError(
+        requestError instanceof Error ? requestError.message : 'Could not record the refund.',
+      );
+    } finally {
+      setIsSavingRefund(false);
     }
   };
 
@@ -2543,19 +2590,32 @@ export const BookingDetailsPanel: React.FC<BookingDetailsPanelProps> = ({
                         Covers {details.tickets.length} of {details.passengers.length} traveler(s) on this PNR.
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!paymentAmount && maxAllowedPayment > 0) {
-                          setPaymentAmount(formatNumberWithCommas(String(maxAllowedPayment)));
-                        }
-                        setIsPaymentModalOpen(true);
-                      }}
-                      className="inline-flex items-center gap-1.5 rounded-xl bg-teal-700 px-3.5 py-2 text-xs font-semibold text-white hover:bg-teal-800"
-                    >
-                      <CreditCard className="h-3.5 w-3.5" />
-                      <span>Collect Payment</span>
-                    </button>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!paymentAmount && maxAllowedPayment > 0) {
+                            setPaymentAmount(formatNumberWithCommas(String(maxAllowedPayment)));
+                          }
+                          setIsPaymentModalOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-teal-700 px-3.5 py-2 text-xs font-semibold text-white hover:bg-teal-800"
+                      >
+                        <CreditCard className="h-3.5 w-3.5" />
+                        <span>Collect Payment</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRefundCurrency(paymentCurrency);
+                          setIsRefundModalOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-rose-700 px-3.5 py-2 text-xs font-semibold text-white hover:bg-rose-800"
+                      >
+                        <CreditCard className="h-3.5 w-3.5" />
+                        <span>Process Refund</span>
+                      </button>
+                    </div>
                   </div>
 
                   {invoicesLoading ? (
@@ -2998,6 +3058,93 @@ export const BookingDetailsPanel: React.FC<BookingDetailsPanelProps> = ({
                     className="rounded-lg bg-teal-700 px-4 py-2 text-xs font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {isSavingPayment ? 'Saving...' : 'Record Payment'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {isRefundModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+              <form
+                onSubmit={handleProcessRefund}
+                className="w-full max-w-md rounded-2xl border border-rose-100 bg-white p-6 shadow-2xl"
+              >
+                <h3 className="text-base font-bold text-rose-900">Process Customer Refund</h3>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Customer: <strong>{booking.customer_name}</strong> ({booking.booking_code})
+                </p>
+
+                <div className="mt-4 space-y-3">
+                  <div className="grid grid-cols-[1fr_6rem] gap-2">
+                    <label className="block text-xs font-semibold text-slate-700">
+                      Amount Returned
+                      <input
+                        required
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="e.g. 55,000"
+                        value={refundAmount}
+                        onChange={(e) =>
+                          setRefundAmount(formatNumberWithCommas(e.target.value))
+                        }
+                        className="mt-1 w-full rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 font-mono text-sm font-bold text-rose-900 focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-200"
+                      />
+                    </label>
+                    <label className="block text-xs font-semibold text-slate-700">
+                      Currency
+                      <input
+                        required
+                        minLength={3}
+                        maxLength={3}
+                        value={refundCurrency}
+                        onChange={(e) => setRefundCurrency(e.target.value.toUpperCase())}
+                        className="mt-1 w-full rounded-lg border border-slate-300 px-2.5 py-2 text-center font-mono text-xs font-bold uppercase"
+                      />
+                    </label>
+                  </div>
+
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Refund Method
+                    <select
+                      value={refundMethod}
+                      onChange={(e) => setRefundMethod(e.target.value as PaymentMethod)}
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-2.5 py-2 text-xs"
+                    >
+                      <option value="cash">Cash</option>
+                      <option value="bank_transfer">Bank Transfer</option>
+                      <option value="mobile_money">Mobile Money</option>
+                      <option value="card_gateway">Card</option>
+                      <option value="cheque">Cheque</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </label>
+
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Reference / Notes
+                    <input
+                      value={refundNotes}
+                      onChange={(e) => setRefundNotes(e.target.value)}
+                      placeholder="Refund reference or cancellation details..."
+                      className="mt-1 w-full rounded-lg border border-slate-300 px-2.5 py-2 text-xs"
+                    />
+                  </label>
+                </div>
+                <div className="mt-5 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsRefundModalOpen(false)}
+                    disabled={isSavingRefund}
+                    className="rounded-lg px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSavingRefund}
+                    className="rounded-lg bg-rose-700 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isSavingRefund ? 'Processing...' : 'Record Refund'}
                   </button>
                 </div>
               </form>

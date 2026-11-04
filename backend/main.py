@@ -5253,13 +5253,20 @@ class PaymentCreate(BaseModel):
     customer_id: int = Field(gt=0)
     booking_id: int | None = Field(default=None, gt=0)
     currency: str = Field(min_length=3, max_length=3)
-    amount: Decimal = Field(gt=0, max_digits=18, decimal_places=4)
+    amount: Decimal = Field(max_digits=18, decimal_places=4)
     payment_method: PaymentMethod = "cash"
     status: PaymentStatus = "confirmed"
     received_at: datetime | None = None
     external_reference: str | None = Field(default=None, max_length=120)
     receipt_number: str | None = Field(default=None, max_length=40)
     notes: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("amount")
+    @classmethod
+    def validate_nonzero_payment_amount(cls, value: Decimal) -> Decimal:
+        if value == 0:
+            raise ValueError("Payment amount cannot be zero")
+        return value
 
     @field_validator("currency", mode="before")
     @classmethod
@@ -5488,7 +5495,7 @@ def create_payment(
                 INSERT INTO public.activity_logs
                     (user_id, branch_id, action, entity_type, entity_id, details_json)
                 VALUES (
-                    :user_id, :branch_id, 'payment.recorded', 'payment', :payment_id,
+                    :user_id, :branch_id, :action, 'payment', :payment_id,
                     jsonb_build_object(
                         'customer_id', CAST(:customer_id AS bigint),
                         'currency', CAST(:currency AS text),
@@ -5502,6 +5509,7 @@ def create_payment(
             {
                 "user_id": staff_id,
                 "branch_id": branch_id,
+                "action": "refund.recorded" if payment.amount < 0 else "payment.recorded",
                 "payment_id": row["id"],
                 "customer_id": payment.customer_id,
                 "currency": payment.currency,
@@ -5535,7 +5543,7 @@ def create_payment(
                 "currency": payment.currency,
                 "booking_id": payment.booking_id,
             },
-        ).mappings().all()
+        ).mappings().all() if payment.amount > 0 else []
 
         remaining = payment.amount
         total_allocated = Decimal("0")

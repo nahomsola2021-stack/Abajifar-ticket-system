@@ -101,6 +101,7 @@ migration once, in numeric order, to the Supabase project.
 | `007_supplier_and_expense_records.sql` | Gives supplier bills and business expenses their own branch, numbering, status, and indexing, and records which branch owns each financial document |
 | `008_document_number_sequences.sql` | Adds the branch-scoped number sequences behind `INV-`, `RCP-`, `BILL-`, and `EXP-` document numbers |
 | `009_supplier_bill_number.sql` | Gives each supplier bill an office-generated number alongside the partner's own invoice reference |
+| `012_allow_refund_payment_entries.sql` | Allows signed customer payment entries so refunds reduce the cash ledger |
 
 Apply the migrations with the runner, from the backend directory:
 
@@ -138,10 +139,12 @@ that raised the demand.
 - `GET /api/payments` lists branch-scoped payments with optional `q` search
   over customer name, receipt number, and external reference. Each row reports
   `allocated_total` and `unallocated_total`.
-- `POST /api/payments` records a receipt with its customer, currency, amount,
+- `POST /api/payments` records a receipt or refund with its customer, currency, amount,
   method (`cash`, `bank_transfer`, `mobile_money`, `card_gateway`, `cheque`,
   `other`), status, optional receipt number, and optional external reference.
-  Requires the cash desk role: `ADMIN`, `MANAGER`, `ACCOUNTANT`, or `CASHIER`.
+  Positive amounts are receipts; negative amounts are refunds and are not
+  allocated to invoices. Requires the cash desk role: `ADMIN`, `MANAGER`,
+  `ACCOUNTANT`, or `CASHIER`.
 - `POST /api/payments/{id}/allocations` applies money to one invoice. The
   payment and invoice currencies must match, the invoice must already be
   `issued` or `partially_paid`, and the allocation cannot exceed either the
@@ -154,8 +157,8 @@ issue invoices. Those stay with `ADMIN`, `MANAGER`, or `ACCOUNTANT`.
 
 Allocations drive the invoice status automatically. An invoice with a payment
 but a remaining balance becomes `partially_paid`; an invoice whose allocations
-reach its grand total becomes `paid`. Every payment and allocation is written
-to `activity_logs` in the same transaction.
+reach its grand total becomes `paid`. Every payment, refund, and allocation is
+written to `activity_logs` in the same transaction.
 
 `customer_payments.branch_id` records the office that took the money, so a
 branch never reports another branch's cash. See migration `003`.
