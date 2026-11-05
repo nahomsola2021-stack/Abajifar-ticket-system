@@ -102,6 +102,7 @@ migration once, in numeric order, to the Supabase project.
 | `008_document_number_sequences.sql` | Adds the branch-scoped number sequences behind `INV-`, `RCP-`, `BILL-`, and `EXP-` document numbers |
 | `009_supplier_bill_number.sql` | Gives each supplier bill an office-generated number alongside the partner's own invoice reference |
 | `012_allow_refund_payment_entries.sql` | Allows signed customer payment entries so refunds reduce the cash ledger |
+| `013_allow_draft_bookings.sql` | Allows new bookings to use the `draft` status and makes it the database default |
 
 Apply the migrations with the runner, from the backend directory:
 

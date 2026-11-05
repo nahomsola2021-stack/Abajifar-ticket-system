@@ -3376,7 +3376,7 @@ def create_booking(
                     'booking.created',
                     'booking',
                     :booking_id,
-                    jsonb_build_object('to_status', 'requested')
+                    jsonb_build_object('to_status', :to_status)
                 )
             """
         ),
@@ -3384,6 +3384,7 @@ def create_booking(
             "user_id": staff_id,
             "branch_id": branch_id,
             "booking_id": row["id"],
+            "to_status": row["status"],
         },
         )
 
