@@ -115,8 +115,8 @@ CREATE TABLE bookings (
     ticketing_partner_id BIGINT REFERENCES suppliers(id) ON DELETE RESTRICT,
     external_pnr VARCHAR(30),
     reservation_system VARCHAR(60), -- e.g. partner portal/GDS name; not an API credential
-    status VARCHAR(30) NOT NULL DEFAULT 'draft'
-        CHECK (status IN ('draft','requested','quoted','confirmed','ticketing_pending','partially_ticketed','ticketed','cancelled','expired','closed')),
+    status VARCHAR(30) NOT NULL DEFAULT 'requested'
+        CHECK (status IN ('requested','quoted','confirmed','ticketing_pending','partially_ticketed','ticketed','cancelled','expired','closed')),
     booking_channel VARCHAR(30) NOT NULL DEFAULT 'office'
         CHECK (booking_channel IN ('office','phone','email','website','whatsapp','corporate','other')),
     assigned_to BIGINT REFERENCES users(id) ON DELETE SET NULL,

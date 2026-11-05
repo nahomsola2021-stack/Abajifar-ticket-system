@@ -134,7 +134,7 @@ def run() -> None:
             booking=main.BookingCreate(customer_id=customer, booking_channel="office"),
         )
         check("booking is created", created.id is not None)
-        check("booking starts as draft", created.status == "draft", created.status)
+        check("booking starts as requested", created.status == "requested", created.status)
         check(
             "booking code is generated",
             created.booking_code.startswith("TO") and len(created.booking_code) == 24,

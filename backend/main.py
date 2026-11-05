@@ -3342,12 +3342,12 @@ def create_booking(
             text(
                 """
                 INSERT INTO public.bookings (
-                    booking_code, branch_id, customer_id, external_pnr,
+                    booking_code, branch_id, customer_id, status, external_pnr,
                     reservation_system, booking_channel, assigned_to, created_by,
                     customer_notes
                 )
                 VALUES (
-                    :booking_code, :branch_id, :customer_id, :external_pnr,
+                    :booking_code, :branch_id, :customer_id, :status, :external_pnr,
                     :reservation_system, :booking_channel, :staff_id, :staff_id,
                     :customer_notes
                 )
@@ -3360,6 +3360,7 @@ def create_booking(
                 **booking.model_dump(),
                 "booking_code": booking_code,
                 "branch_id": branch_id,
+                "status": "requested",
                 "staff_id": staff_id,
             },
         ).mappings().one()
