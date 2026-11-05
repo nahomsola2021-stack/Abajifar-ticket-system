@@ -83,6 +83,7 @@ export class ApiError extends Error {
 interface ListQueryOptions {
   query?: string;
   q?: string;
+  booking_id?: number;
   status?: string;
   limit?: number;
   offset?: number;
@@ -905,6 +906,9 @@ export function fetchPayments(
     if (Number.isFinite(queryOrOptions.offset) && queryOrOptions.offset! >= 0) {
       offset = Math.floor(queryOrOptions.offset!);
     }
+    if (Number.isSafeInteger(queryOrOptions.booking_id) && queryOrOptions.booking_id! > 0) {
+      params.set('booking_id', String(queryOrOptions.booking_id));
+    }
     addDateFilters(params, queryOrOptions);
   }
 
@@ -913,6 +917,22 @@ export function fetchPayments(
   if (query) params.set('q', query);
 
   return customerRequest<PaymentListResponse>(accessToken, `/api/payments?${params.toString()}`);
+}
+
+export async function fetchBookingPayments(
+  accessToken: string,
+  bookingId: number,
+): Promise<PaymentRecord[]> {
+  const limit = 100;
+  const payments: PaymentRecord[] = [];
+  let offset = 0;
+
+  while (true) {
+    const result = await fetchPayments(accessToken, { booking_id: bookingId, limit, offset });
+    payments.push(...result.items);
+    if (payments.length >= result.total || result.items.length === 0) return payments;
+    offset += result.items.length;
+  }
 }
 
 export function createPayment(

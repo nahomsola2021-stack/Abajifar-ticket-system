@@ -104,6 +104,7 @@ migration once, in numeric order, to the Supabase project.
 | `012_allow_refund_payment_entries.sql` | Allows signed customer payment entries so refunds reduce the cash ledger |
 | `013_allow_draft_bookings.sql` | Allows the legacy `draft` booking status |
 | `014_fix_booking_status_default.sql` | Restores `requested` as the default and aligns the constraint with supported booking statuses |
+| `015_link_customer_payments_to_bookings.sql` | Links customer payments to bookings so booking balances can be calculated accurately |
 
 Apply the migrations with the runner, from the backend directory:
 

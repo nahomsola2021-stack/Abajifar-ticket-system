@@ -40,6 +40,7 @@ import {
   createTicketingRequest,
   downloadDocument,
   fetchBookingDetails,
+  fetchBookingPayments,
   fetchBookingStatusHistory,
   fetchDocumentBlob,
   fetchDocuments,
@@ -65,6 +66,7 @@ import type {
   FlightSegmentRecord,
   InvoiceRecord,
   PaymentMethod,
+  PaymentRecord,
   TicketCreateInput,
   TicketRecord,
   TicketSupplierRecord,
@@ -282,6 +284,9 @@ export const BookingDetailsPanel: React.FC<BookingDetailsPanelProps> = ({
   const [bookingInvoices, setBookingInvoices] = useState<InvoiceRecord[]>([]);
   const [invoicesLoading, setInvoicesLoading] = useState(false);
   const [invoicesRefreshKey, setInvoicesRefreshKey] = useState(0);
+  const [bookingPayments, setBookingPayments] = useState<PaymentRecord[]>([]);
+  const [paymentsLoading, setPaymentsLoading] = useState(true);
+  const [paymentHistoryError, setPaymentHistoryError] = useState<string | null>(null);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
@@ -573,6 +578,32 @@ export const BookingDetailsPanel: React.FC<BookingDetailsPanelProps> = ({
       isCurrent = false;
     };
   }, [accessToken, booking.id, invoicesRefreshKey]);
+
+  useEffect(() => {
+    if (!accessToken || !booking.id) return;
+    let isCurrent = true;
+    setPaymentsLoading(true);
+    setPaymentHistoryError(null);
+    fetchBookingPayments(accessToken, booking.id)
+      .then((result) => {
+        if (isCurrent) setBookingPayments(result);
+      })
+      .catch((requestError: unknown) => {
+        if (!isCurrent) return;
+        const message =
+          requestError instanceof Error
+            ? requestError.message
+            : 'Could not load booking payment history.';
+        setPaymentHistoryError(message);
+        setError(message);
+      })
+      .finally(() => {
+        if (isCurrent) setPaymentsLoading(false);
+      });
+    return () => {
+      isCurrent = false;
+    };
+  }, [accessToken, booking.id]);
 
   useEffect(() => {
     if (
@@ -914,9 +945,9 @@ export const BookingDetailsPanel: React.FC<BookingDetailsPanelProps> = ({
       setError('Enter a valid payment amount.');
       return;
     }
-    if (maxAllowedPayment > 0 && numericPayment > maxAllowedPayment) {
+    if (maxAllowedPayment > 0 && numericPayment > remainingBalance) {
       setError(
-        `Payment amount cannot exceed the total ticket/invoice price of ${paymentCurrency.toUpperCase()} ${formatNumberWithCommas(String(maxAllowedPayment))}.`,
+        `Payment amount cannot exceed the remaining balance of ${paymentCurrency.toUpperCase()} ${formatNumberWithCommas(String(remainingBalance))}.`,
       );
       return;
     }
@@ -926,11 +957,13 @@ export const BookingDetailsPanel: React.FC<BookingDetailsPanelProps> = ({
     try {
       const created = await createPayment(accessToken, {
         customer_id: booking.customer_id,
+        booking_id: booking.id,
         currency: paymentCurrency.trim().toUpperCase(),
         amount: numericPayment,
         payment_method: paymentMethod,
         notes: paymentNotes.trim() || `Booking ${booking.booking_code}`,
       });
+      setBookingPayments((current) => [created, ...current.filter((payment) => payment.id !== created.id)]);
       setSuccess(
         `Receipt ${created.receipt_number ?? `#${created.id}`} recorded for ${paymentCurrency.toUpperCase()} ${formatNumberWithCommas(String(numericPayment))}.`,
       );
@@ -962,6 +995,7 @@ export const BookingDetailsPanel: React.FC<BookingDetailsPanelProps> = ({
       const signedRefund = -Math.abs(numericRefund);
       const created = await createPayment(accessToken, {
         customer_id: booking.customer_id,
+        booking_id: booking.id,
         currency: refundCurrency.trim().toUpperCase(),
         amount: signedRefund,
         payment_method: refundMethod,
@@ -972,6 +1006,7 @@ export const BookingDetailsPanel: React.FC<BookingDetailsPanelProps> = ({
           .filter(Boolean)
           .join('. '),
       });
+      setBookingPayments((current) => [created, ...current.filter((payment) => payment.id !== created.id)]);
       setSuccess(
         `Refund ${created.receipt_number ?? `#${created.id}`} recorded for ${refundCurrency.toUpperCase()} ${formatNumberWithCommas(String(numericRefund))}.`,
       );
@@ -1123,8 +1158,17 @@ export const BookingDetailsPanel: React.FC<BookingDetailsPanelProps> = ({
   );
   const maxAllowedPayment =
     totalInvoicedAmount > 0 ? totalInvoicedAmount : totalTicketSellingAmount;
+  const totalPaidAmount = bookingPayments
+    .filter(
+      (payment) =>
+        payment.booking_id === booking.id &&
+        payment.status !== 'voided' &&
+        payment.currency.trim().toUpperCase() === paymentCurrency.trim().toUpperCase(),
+    )
+    .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  const remainingBalance = Math.max(0, maxAllowedPayment - totalPaidAmount);
   const enteredPaymentNum = parseCommaNumber(paymentAmount);
-  const isOverpayment = maxAllowedPayment > 0 && enteredPaymentNum > maxAllowedPayment;
+  const isOverpayment = maxAllowedPayment > 0 && enteredPaymentNum > remainingBalance;
 
   return (
     <div className="space-y-5">
@@ -2593,13 +2637,14 @@ export const BookingDetailsPanel: React.FC<BookingDetailsPanelProps> = ({
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
+                        disabled={invoicesLoading || paymentsLoading || Boolean(paymentHistoryError)}
                         onClick={() => {
-                          if (!paymentAmount && maxAllowedPayment > 0) {
-                            setPaymentAmount(formatNumberWithCommas(String(maxAllowedPayment)));
+                          if (!paymentAmount && remainingBalance > 0) {
+                            setPaymentAmount(formatNumberWithCommas(String(remainingBalance)));
                           }
                           setIsPaymentModalOpen(true);
                         }}
-                        className="inline-flex items-center gap-1.5 rounded-xl bg-teal-700 px-3.5 py-2 text-xs font-semibold text-white hover:bg-teal-800"
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-teal-700 px-3.5 py-2 text-xs font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <CreditCard className="h-3.5 w-3.5" />
                         <span>Collect Payment</span>
@@ -2617,6 +2662,14 @@ export const BookingDetailsPanel: React.FC<BookingDetailsPanelProps> = ({
                       </button>
                     </div>
                   </div>
+                  {paymentHistoryError && (
+                    <p role="alert" className="mt-2 text-xs text-rose-700">
+                      Payment history could not be loaded, so payment collection is disabled: {paymentHistoryError}
+                    </p>
+                  )}
+                  {paymentsLoading && (
+                    <p className="mt-2 text-xs text-slate-500">Loading booking payment history...</p>
+                  )}
 
                   {invoicesLoading ? (
                     <p className="mt-3 text-xs text-slate-500">Loading invoices...</p>
@@ -2949,15 +3002,16 @@ export const BookingDetailsPanel: React.FC<BookingDetailsPanelProps> = ({
 
                 {maxAllowedPayment > 0 && (
                   <div className="mt-3 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-xs">
-                    <span className="font-medium text-slate-600">Total Ticket / Invoice Price:</span>
+                    <span className="font-medium text-slate-600">Remaining Balance:</span>
                     <button
                       type="button"
+                      disabled={remainingBalance <= 0}
                       onClick={() =>
-                        setPaymentAmount(formatNumberWithCommas(String(maxAllowedPayment)))
+                        setPaymentAmount(formatNumberWithCommas(String(remainingBalance)))
                       }
-                      className="font-mono font-bold text-teal-700 hover:underline"
+                      className="font-mono font-bold text-teal-700 hover:underline disabled:cursor-not-allowed disabled:text-slate-400 disabled:no-underline"
                     >
-                      {paymentCurrency} {formatNumberWithCommas(String(maxAllowedPayment))} (Click to fill)
+                      {paymentCurrency} {formatNumberWithCommas(String(remainingBalance))} (Click to fill)
                     </button>
                   </div>
                 )}
@@ -2998,24 +3052,24 @@ export const BookingDetailsPanel: React.FC<BookingDetailsPanelProps> = ({
                   {isOverpayment && (
                     <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900">
                       <p className="font-bold">
-                        Blocked: Entered amount is higher than the actual ticket/invoice price!
+                        Blocked: Entered amount is higher than the remaining balance!
                       </p>
                       <p className="mt-0.5 text-rose-800">
-                        Maximum allowed payment for this booking is{' '}
+                        Remaining balance for this booking is{' '}
                         <strong>
-                          {paymentCurrency} {formatNumberWithCommas(String(maxAllowedPayment))}
+                          {paymentCurrency} {formatNumberWithCommas(String(remainingBalance))}
                         </strong>
                         .
                       </p>
                       <button
                         type="button"
                         onClick={() =>
-                          setPaymentAmount(formatNumberWithCommas(String(maxAllowedPayment)))
+                          setPaymentAmount(formatNumberWithCommas(String(remainingBalance)))
                         }
                         className="mt-2 rounded-md bg-rose-700 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-rose-800"
                       >
-                        Set to Exact Ticket Price ({paymentCurrency}{' '}
-                        {formatNumberWithCommas(String(maxAllowedPayment))})
+                        Set to Remaining Balance ({paymentCurrency}{' '}
+                        {formatNumberWithCommas(String(remainingBalance))})
                       </button>
                     </div>
                   )}

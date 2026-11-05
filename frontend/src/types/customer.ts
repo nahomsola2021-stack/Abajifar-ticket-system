@@ -331,6 +331,7 @@ export type PaymentStatus = 'pending' | 'confirmed' | 'voided';
 export interface PaymentRecord {
   id: number;
   customer_id: number;
+  booking_id: number | null;
   customer_name: string;
   currency: string;
   amount: string;
@@ -348,6 +349,7 @@ export interface PaymentRecord {
 
 export interface PaymentCreateInput {
   customer_id: number;
+  booking_id?: number | null;
   currency: string;
   amount: number;
   payment_method?: PaymentMethod;

@@ -5311,6 +5311,7 @@ class PaymentCreate(BaseModel):
 class PaymentRecord(BaseModel):
     id: int
     customer_id: int
+    booking_id: int | None
     customer_name: str
     currency: str
     amount: Decimal
@@ -5367,15 +5368,22 @@ def recalc_invoice_status(connection, invoice_id: int) -> str:
     return "issued"
 
 
-def payment_query_filters(search: str, branch_id: int) -> tuple[str, dict[str, object]]:
+def payment_query_filters(
+    search: str,
+    branch_id: int,
+    booking_id: int | None = None,
+) -> tuple[str, dict[str, object]]:
     filters = """
         customer_payments.branch_id = :branch_id
     """
     params: dict[str, object] = {
         "branch_id": branch_id,
+        "booking_id": booking_id,
         "search": search,
         "search_pattern": f"%{search}%",
     }
+    if booking_id is not None:
+        filters += " AND customer_payments.booking_id = :booking_id"
     if search:
         filters += """
             AND (
@@ -5390,6 +5398,7 @@ def payment_query_filters(search: str, branch_id: int) -> tuple[str, dict[str, o
 @app.get("/api/payments", response_model=PaymentListResponse)
 def list_payments(
     q: str = Query(default="", max_length=200),
+    booking_id: int | None = Query(default=None, gt=0),
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     user: AuthenticatedUser = Depends(get_authenticated_user),
@@ -5397,7 +5406,7 @@ def list_payments(
     search = q.strip()
     with engine.connect() as connection:
         _, branch_id = require_finance_staff(connection, user.id)
-        filters, params = payment_query_filters(search, branch_id)
+        filters, params = payment_query_filters(search, branch_id, booking_id)
         total = connection.execute(
             text(
                 f"""
@@ -5415,6 +5424,7 @@ def list_payments(
                 SELECT
                     customer_payments.id,
                     customer_payments.customer_id,
+                    customer_payments.booking_id,
                     customers.display_name AS customer_name,
                     customer_payments.currency,
                     customer_payments.amount,
@@ -5446,7 +5456,7 @@ def list_payments(
         allocated = row["allocated_total"] or Decimal("0")
         items.append(PaymentRecord(
             **{k: row[k] for k in [
-                "id", "customer_id", "customer_name", "currency", "amount",
+                "id", "customer_id", "booking_id", "customer_name", "currency", "amount",
                 "payment_method", "status", "received_at", "external_reference",
                 "receipt_number", "notes", "received_by", "created_at",
             ]},
@@ -5470,6 +5480,28 @@ def create_payment(
         ).mappings().one_or_none()
         if customer is None:
             raise HTTPException(status_code=404, detail="The selected customer was not found.")
+        if payment.booking_id is not None:
+            booking = connection.execute(
+                text(
+                    """
+                    SELECT id
+                    FROM public.bookings
+                    WHERE id = :booking_id
+                        AND customer_id = :customer_id
+                        AND branch_id = :branch_id
+                    """
+                ),
+                {
+                    "booking_id": payment.booking_id,
+                    "customer_id": payment.customer_id,
+                    "branch_id": branch_id,
+                },
+            ).mappings().one_or_none()
+            if booking is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="The selected booking was not found for this customer.",
+                )
 
         received_at = payment.received_at
         if received_at is None:
@@ -5479,21 +5511,22 @@ def create_payment(
             text(
                 """
                 INSERT INTO public.customer_payments (
-                    customer_id, branch_id, currency, amount, payment_method, status,
+                    customer_id, booking_id, branch_id, currency, amount, payment_method, status,
                     received_at, external_reference, receipt_number, notes, received_by
                 )
                 VALUES (
-                    :customer_id, :branch_id, :currency, :amount, :payment_method, :status,
+                    :customer_id, :booking_id, :branch_id, :currency, :amount, :payment_method, :status,
                     :received_at, :external_reference, :receipt_number, :notes, :received_by
                 )
                 RETURNING
-                    id, customer_id, currency, amount, payment_method, status,
+                    id, customer_id, booking_id, currency, amount, payment_method, status,
                     received_at, external_reference, receipt_number, notes,
                     received_by, created_at
                 """
             ),
             {
                 "customer_id": payment.customer_id,
+                "booking_id": payment.booking_id,
                 "branch_id": branch_id,
                 "currency": payment.currency,
                 "amount": payment.amount,
@@ -5608,7 +5641,7 @@ def create_payment(
 
     return PaymentRecord(
         **{k: row[k] for k in [
-            "id", "customer_id", "currency", "amount", "payment_method", "status",
+            "id", "customer_id", "booking_id", "currency", "amount", "payment_method", "status",
             "received_at", "external_reference", "receipt_number", "notes",
             "received_by", "created_at",
         ]},
