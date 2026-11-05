@@ -124,6 +124,8 @@ function addDateFilters(params: URLSearchParams, options: ListQueryOptions): voi
 async function renderAwareFetch(url: RequestInfo | URL, options?: RequestInit): Promise<Response> {
   const maxRetries = 4;
   const delayMs = 15000; // Allow up to 60 seconds total for Render to wake up
+  const method = options?.method?.toUpperCase() ?? 'GET';
+  const canRetry = method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
 
   for (let i = 0; i < maxRetries; i++) {
     try {
@@ -131,7 +133,7 @@ async function renderAwareFetch(url: RequestInfo | URL, options?: RequestInit): 
 
       // Handle Render HTML error pages returned while the container is booting
       if (response.status === 502 || response.status === 503 || response.status === 504) {
-        if (i === maxRetries - 1) return response;
+        if (!canRetry || i === maxRetries - 1) return response;
         console.warn(`[API] Backend waking up (Status: ${response.status}). Retrying in ${delayMs / 1000}s...`);
         await new Promise((res) => setTimeout(res, delayMs));
         continue;
@@ -139,6 +141,7 @@ async function renderAwareFetch(url: RequestInfo | URL, options?: RequestInit): 
 
       return response;
     } catch (error) {
+      if (options?.signal?.aborted || !canRetry) throw error;
       // Handle missing CORS headers or strict timeouts caused by the asleep container
       if (i === maxRetries - 1) throw error;
       console.warn(`[API] Network error (CORS/Offline). Backend likely asleep. Retrying in ${delayMs / 1000}s...`);
@@ -466,34 +469,81 @@ async function customerRequest<T>(accessToken: string, path: string, init?: Requ
     throw new ApiError('Backend API URL (VITE_API_URL) is not configured.', 0, 'ENV_CONFIG_MISSING');
   }
 
-  let response: Response;
+  const timeoutController = new AbortController();
+  let timedOut = false;
+  const timeoutId = setTimeout(() => {
+    timedOut = true;
+    timeoutController.abort();
+  }, 75_000);
+  const abortFromCaller = () => timeoutController.abort(init?.signal?.reason);
+  const method = init?.method?.toUpperCase() ?? 'GET';
+  const isWrite = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
+  const timeoutError = () => new ApiError(
+    'The backend did not confirm this request within 75 seconds. It may still have completed; check whether it succeeded before trying again.',
+    0,
+    'REQUEST_TIMEOUT',
+  );
+  if (init?.signal?.aborted) abortFromCaller();
+  else init?.signal?.addEventListener('abort', abortFromCaller, { once: true });
+
   try {
-    response = await renderAwareFetch(`${apiUrl}${path}`, {
-      ...init,
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Accept: 'application/json',
-        ...(init?.body && !(init.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
-        ...init?.headers,
-      },
-    });
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    throw new ApiError(
-      `Could not reach the backend at ${apiUrl}. Check that it is running and that this frontend origin is allowed by CORS. (${reason})`,
-      0,
-      'BACKEND_CONNECTION_ERROR',
-      reason,
-    );
-  }
+    let response: Response;
+    try {
+      response = await renderAwareFetch(`${apiUrl}${path}`, {
+        ...init,
+        signal: timeoutController.signal,
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: 'application/json',
+          ...(init?.body && !(init.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
+          ...init?.headers,
+        },
+      });
+    } catch (error) {
+      if (timedOut) throw timeoutError();
 
-  if (!response.ok) {
-    const errorDetail = await getErrorDetail(response);
-    throw new ApiError(errorDetail || `API request failed (${response.status}).`, response.status, 'API_ERROR', errorDetail);
-  }
+      const reason = error instanceof Error ? error.message : String(error);
+      if (isWrite) {
+        throw new ApiError(
+          'The backend could not confirm whether this change completed. Check whether it succeeded before trying again.',
+          0,
+          'REQUEST_UNCONFIRMED',
+          reason,
+        );
+      }
+      throw new ApiError(
+        `Could not reach the backend at ${apiUrl}. Check that it is running and that this frontend origin is allowed by CORS. (${reason})`,
+        0,
+        'BACKEND_CONNECTION_ERROR',
+        reason,
+      );
+    }
 
-  if (response.status === 204) return undefined as T;
-  return response.json() as Promise<T>;
+    if (!response.ok) {
+      const errorDetail = await getErrorDetail(response);
+      if (timedOut) throw timeoutError();
+      if (isWrite && [502, 503, 504].includes(response.status)) {
+        throw new ApiError(
+          'The backend could not confirm whether this change completed. Check whether it succeeded before trying again.',
+          response.status,
+          'REQUEST_UNCONFIRMED',
+          errorDetail,
+        );
+      }
+      throw new ApiError(errorDetail || `API request failed (${response.status}).`, response.status, 'API_ERROR', errorDetail);
+    }
+
+    if (response.status === 204) return undefined as T;
+    try {
+      return await response.json() as T;
+    } catch (error) {
+      if (timedOut) throw timeoutError();
+      throw error;
+    }
+  } finally {
+    clearTimeout(timeoutId);
+    init?.signal?.removeEventListener('abort', abortFromCaller);
+  }
 }
 
 export function fetchCustomers(
