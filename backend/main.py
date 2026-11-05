@@ -506,13 +506,29 @@ class CustomerListResponse(BaseModel):
 
 BookingChannel = Literal["office", "phone", "email", "website", "whatsapp", "corporate", "other"]
 BookingStatus = Literal[
-    "draft", "ticketed", "cancelled",
+    "draft",
+    "requested",
+    "quoted",
+    "confirmed",
+    "ticketing_pending",
+    "partially_ticketed",
+    "ticketed",
+    "cancelled",
+    "expired",
+    "closed",
 ]
 
 BOOKING_STATUS_TRANSITIONS: dict[str, set[str]] = {
-    "draft": {"ticketed", "cancelled"},
+    "draft": {"cancelled"},
+    "requested": {"quoted", "confirmed", "cancelled", "expired"},
+    "quoted": {"confirmed", "cancelled", "expired"},
+    "confirmed": {"ticketing_pending", "cancelled"},
+    "ticketing_pending": {"cancelled"},
+    "partially_ticketed": set(),
     "ticketed": set(),
     "cancelled": set(),
+    "expired": set(),
+    "closed": set(),
 }
 
 
@@ -5153,8 +5169,8 @@ def update_booking_status(
 
         previous_status = booking["status"]
         next_status = update.status
-        if next_status not in BOOKING_STATUS_TRANSITIONS[previous_status]:
-            allowed = sorted(BOOKING_STATUS_TRANSITIONS[previous_status])
+        allowed = sorted(BOOKING_STATUS_TRANSITIONS.get(previous_status, set()))
+        if next_status not in allowed:
             raise HTTPException(
                 status_code=409,
                 detail=(
