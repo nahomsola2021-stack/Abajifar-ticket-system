@@ -3377,7 +3377,7 @@ def create_booking(
                     'booking.created',
                     'booking',
                     :booking_id,
-                    jsonb_build_object('to_status', :to_status)
+                    jsonb_build_object('to_status', CAST(:to_status AS text))
                 )
             """
         ),
